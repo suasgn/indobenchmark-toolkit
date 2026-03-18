@@ -1,5 +1,5 @@
 # Indobenchmark Toolkit
-![Pull Requests Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat) [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/indobenchmark/indonlg/blob/master/LICENSE) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.0%20adopted-ff69b4.svg)](CODE_OF_CONDUCT.md)
+![Pull Requests Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat) [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/suasgn/indobenchmark-toolkit/blob/master/LICENSE) [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-v2.0%20adopted-ff69b4.svg)](CODE_OF_CONDUCT.md)
 
 <b>Indobenchmark</b> are collections of Natural Language Understanding (IndoNLU) and Natural Language Generation (IndoNLG) resources for Bahasa Indonesia such as Institut Teknologi Bandung, Universitas Multimedia Nusantara, The Hong Kong University of Science and Technology, Universitas Indonesia, DeepMind, Gojek, and Prosa.AI.
 
@@ -14,13 +14,13 @@ uv add indobenchmark-toolkit
 To install directly from Git without publishing a package first:
 
 ```bash
-uv add "indobenchmark-toolkit @ git+https://github.com/username/repo.git"
+uv add "indobenchmark-toolkit @ git+https://github.com/suasgn/indobenchmark-toolkit.git"
 ```
 
 You can also pin a branch, tag, or commit:
 
 ```bash
-uv add "indobenchmark-toolkit @ git+https://github.com/username/repo.git@main"
+uv add "indobenchmark-toolkit @ git+https://github.com/suasgn/indobenchmark-toolkit.git@main"
 ```
 
 For local development in this repository:
