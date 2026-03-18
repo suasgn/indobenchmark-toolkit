@@ -3,6 +3,33 @@
 
 <b>Indobenchmark</b> are collections of Natural Language Understanding (IndoNLU) and Natural Language Generation (IndoNLG) resources for Bahasa Indonesia such as Institut Teknologi Bandung, Universitas Multimedia Nusantara, The Hong Kong University of Science and Technology, Universitas Indonesia, DeepMind, Gojek, and Prosa.AI.
 
+## Installation
+
+This package now targets `transformers>=5,<6` and requires Python 3.10+.
+
+```bash
+uv add indobenchmark-toolkit
+```
+
+To install directly from Git without publishing a package first:
+
+```bash
+uv add "indobenchmark-toolkit @ git+https://github.com/username/repo.git"
+```
+
+You can also pin a branch, tag, or commit:
+
+```bash
+uv add "indobenchmark-toolkit @ git+https://github.com/username/repo.git@main"
+```
+
+For local development in this repository:
+
+```bash
+uv sync
+uv run python -c "from indobenchmark import IndoNLGTokenizer"
+```
+
 ## Toolkit Modules
 #### IndoNLGTokenizer
 <b>IndoNLGTokenizer</b>  is the tokenizer used by both IndoBART and IndoGPT models. 

@@ -1,2 +1,5 @@
-python3 -m build
-python3 -m twine upload --repository pypi dist/*
+#!/usr/bin/env bash
+set -euo pipefail
+
+uv build
+uv run --group publish twine upload --repository pypi dist/*

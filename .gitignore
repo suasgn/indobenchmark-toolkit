@@ -5,6 +5,11 @@
 
 *.txt
 *.tsv
+*.egg-info/
+build/
+dist/
+.venv/
+__pycache__/
 
 # Icon must end with two \r
 Icon

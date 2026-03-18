@@ -12,25 +12,61 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License
-""" Tokenization classes for IndoNLG model."""
+"""Tokenization classes for IndoNLG model."""
 
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    List,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover - optional runtime dependency
+    np = None
+
+try:
+    import tensorflow as tf
+except ImportError:  # pragma: no cover - optional runtime dependency
+    tf = None
+
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional runtime dependency
+    torch = None
+
 from transformers import PreTrainedTokenizer, BatchEncoding
 
 from collections.abc import Mapping
 from transformers.utils import (
     PaddingStrategy,
     TensorType,
-    is_tf_available,
-    is_torch_available,
     logging,
     to_py_obj,
 )
 import sentencepiece as spm
-from transformers.utils.generic import _is_jax, _is_numpy, _is_tensorflow, _is_torch, _is_torch_device
 
 logger = logging.get_logger(__name__)
+
+
+def _is_numpy_array(value):
+    return np is not None and isinstance(value, np.ndarray)
+
+
+def _is_tensorflow_tensor(value):
+    return tf is not None and tf.is_tensor(value)
+
+
+def _is_torch_tensor(value):
+    return torch is not None and isinstance(value, torch.Tensor)
+
 
 VOCAB_FILES_NAMES = {"vocab_file": "sentencepiece.bpe.model"}
 
@@ -38,21 +74,21 @@ PRETRAINED_VOCAB_FILES_MAP = {
     "vocab_file": {
         "indobenchmark/indobart": "https://huggingface.co/indobenchmark/indobart/resolve/main/sentencepiece.bpe.model",
         "indobenchmark/indogpt": "https://huggingface.co/indobenchmark/indogpt/resolve/main/sentencepiece.bpe.model",
-        "indobenchmark/indobart-v2": "https://huggingface.co/indobenchmark/indobart-v2/resolve/main/sentencepiece.bpe.model"
+        "indobenchmark/indobart-v2": "https://huggingface.co/indobenchmark/indobart-v2/resolve/main/sentencepiece.bpe.model",
     }
 }
 
 PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES = {
     "indobenchmark/indobart": 768,
     "indobenchmark/indogpt": 768,
-    "indobenchmark/indobart-v2": 768
+    "indobenchmark/indobart-v2": 768,
 }
 
 SHARED_MODEL_IDENTIFIERS = [
     # Load with
     "indobenchmark/indobart",
     "indobenchmark/indogpt",
-    "indobenchmark/indobart-v2"
+    "indobenchmark/indobart-v2",
 ]
 
 SPIECE_UNDERLINE = "▁"
@@ -65,11 +101,18 @@ TextInputPair = Tuple[str, str]
 PreTokenizedInputPair = Tuple[List[str], List[str]]
 EncodedInputPair = Tuple[List[int], List[int]]
 
+
 class IndoNLGTokenizer(PreTrainedTokenizer):
     vocab_files_names = VOCAB_FILES_NAMES
     pretrained_vocab_files_map = PRETRAINED_VOCAB_FILES_MAP
     max_model_input_sizes = PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES
-    model_input_names=['input_ids', 'attention_mask', 'decoder_input_ids', 'decoder_attention_mask', 'labels']
+    model_input_names = [
+        "input_ids",
+        "attention_mask",
+        "decoder_input_ids",
+        "decoder_attention_mask",
+        "labels",
+    ]
     input_error_message = "text input must of type `str` (single example), `List[str]` (batch of examples)."
 
     def __init__(
@@ -83,33 +126,38 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         unk_token="<unk>",
         pad_token="<pad>",
         mask_token="<mask>",
-        additional_special_tokens=[],
-        **kwargs
+        additional_special_tokens=None,
+        **kwargs,
     ):
+        if additional_special_tokens is None:
+            additional_special_tokens = []
+
         self.sp_model = spm.SentencePieceProcessor()
         self.sp_model.Load(str(vocab_file))
         self.vocab_file = vocab_file
         self.decode_special_token = decode_special_token
         self.model_max_length = 1024
-        
+
         # HACK: These tokens were added by fairseq but don't seem to be actually used when duplicated in the actual
         # sentencepiece vocabulary (this is the case for <s> and </s>
         self.special_tokens_to_ids = {
-            "[javanese]": 40000, 
-            "[sundanese]": 40001, 
+            "[javanese]": 40000,
+            "[sundanese]": 40001,
             "[indonesian]": 40002,
-            "<mask>": 40003
+            "<mask>": 40003,
         }
-        self.special_ids_to_tokens = {v: k for k, v in self.special_tokens_to_ids.items()}
-        
+        self.special_ids_to_tokens = {
+            v: k for k, v in self.special_tokens_to_ids.items()
+        }
+
         # Store Language token ID
-        self.javanese_token = '[javanese]'
+        self.javanese_token = "[javanese]"
         self.javanese_token_id = 40000
-        self.sundanese_token = '[sundanese]'
+        self.sundanese_token = "[sundanese]"
         self.sundanese_token_id = 40001
-        self.indonesian_token = '[indonesian]'
+        self.indonesian_token = "[indonesian]"
         self.indonesian_token_id = 40002
-        
+
         super().__init__(
             vocab_file=vocab_file,
             bos_token=bos_token,
@@ -123,24 +171,39 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
             **kwargs,
         )
         self.special_token_ids = [
-            self.bos_token_id, self.eos_token_id, self.sep_token_id, self.cls_token_id, 
-            self.unk_token_id, self.pad_token_id, self.mask_token_id,
-            self.javanese_token_id, self.sundanese_token_id, self.indonesian_token_id
+            self.bos_token_id,
+            self.eos_token_id,
+            self.sep_token_id,
+            self.cls_token_id,
+            self.unk_token_id,
+            self.pad_token_id,
+            self.mask_token_id,
+            self.javanese_token_id,
+            self.sundanese_token_id,
+            self.indonesian_token_id,
         ]
-    
-    def prepare_input_for_generation(self, inputs, model_type='indobart', lang_token='[indonesian]', decoder_inputs=None,
-                                             decoder_lang_token='[indonesian]', padding='longest', return_tensors=None):
+
+    def prepare_input_for_generation(
+        self,
+        inputs,
+        model_type="indobart",
+        lang_token="[indonesian]",
+        decoder_inputs=None,
+        decoder_lang_token="[indonesian]",
+        padding="longest",
+        return_tensors=None,
+    ):
         """
         Build model inputs for a specified `model_type`. There are two possible `model_type`, i.e., indobart and indogpt.
-        
-        When `model_type` is indogpt, `lang_token`, `decoder_inputs`, and `decoder_lang_token` parameters will be ignored 
-        and the input will be encoded in the gpt2 sequence format as follow: 
-        
+
+        When `model_type` is indogpt, `lang_token`, `decoder_inputs`, and `decoder_lang_token` parameters will be ignored
+        and the input will be encoded in the gpt2 sequence format as follow:
+
         - indogpt sequence: ``<s> X``
-        
-        When `model_type` is indobart, `inputs` and `lang_token` are used as the sequence and language identifier for the indobart encoder, 
+
+        When `model_type` is indobart, `inputs` and `lang_token` are used as the sequence and language identifier for the indobart encoder,
         while `decoder_inputs` and `decoder_lang_token` are used as the sequence and language identifier of the decoder
-        
+
         - indobart encoder sequence: ``X </s> <lang_token_id>``
         - indobart decoder sequences: ``<decoder_lang_token_id> X </s>``
 
@@ -162,43 +225,65 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
 
         Returns:
             :obj:`Dict`: Dictionary with `input_ids`, `attention_mask`, `decoder_input_ids` (optional), and `decoder_attention_mask` (optional)
-        """        
-        if model_type == 'indogpt':
+        """
+        if model_type == "indogpt":
             # Process indogpt input
             if type(inputs) == str:
-                 return self(f'<s> {inputs}', padding=padding, return_tensors=return_tensors)
+                return self(
+                    f"<s> {inputs}", padding=padding, return_tensors=return_tensors
+                )
             elif type(inputs) == list:
                 if len(inputs) == 0 or type(inputs[0]) != str:
                     raise ValueError(IndoNLGTokenizer.input_error_message)
                 else:
-                    return self([f'<s> {input_data}' for input_data in inputs], padding=padding, return_tensors=return_tensors)
+                    return self(
+                        [f"<s> {input_data}" for input_data in inputs],
+                        padding=padding,
+                        return_tensors=return_tensors,
+                    )
             else:
                 raise ValueError(IndoNLGTokenizer.input_error_message)
-        elif model_type == 'indobart':
-                                     
+        elif model_type == "indobart":
             # Process encoder input
             if lang_token not in self.special_tokens_to_ids:
-                raise ValueError(f"Unknown lang_token `{lang_token}`, lang_token must be either `[javanese]`, `[sundanese]`, or `[indonesian]`")  
+                raise ValueError(
+                    f"Unknown lang_token `{lang_token}`, lang_token must be either `[javanese]`, `[sundanese]`, or `[indonesian]`"
+                )
             elif type(inputs) == list:
                 if len(inputs) == 0 or type(inputs[0]) != str:
                     raise ValueError(IndoNLGTokenizer.input_error_message)
             elif type(inputs) != str:
                 raise ValueError(IndoNLGTokenizer.input_error_message)
-                
+
             lang_id = self.special_tokens_to_ids[lang_token]
             input_batch = self(inputs, return_attention_mask=False)
             if type(inputs) == str:
-                input_batch['input_ids'] = [self.bos_token_id] + input_batch['input_ids'] + [self.eos_token_id, lang_id]
+                input_batch["input_ids"] = (
+                    [self.bos_token_id]
+                    + input_batch["input_ids"]
+                    + [self.eos_token_id, lang_id]
+                )
             else:
-                input_batch['input_ids'] = list(map(lambda input_ids: [self.bos_token_id] + input_ids + [self.eos_token_id, lang_id], input_batch['input_ids']))
-            
+                input_batch["input_ids"] = list(
+                    map(
+                        lambda input_ids: (
+                            [self.bos_token_id]
+                            + input_ids
+                            + [self.eos_token_id, lang_id]
+                        ),
+                        input_batch["input_ids"],
+                    )
+                )
+
             if decoder_inputs is None:
                 # Return encoder input
                 return self.pad(input_batch, return_tensors=return_tensors)
             else:
                 # Process decoder input
                 if decoder_lang_token not in self.special_tokens_to_ids:
-                    raise ValueError(f"Unknown decoder_lang_token `{decoder_lang_token}`, decoder_lang_token must be either `[javanese]`, `[sundanese]`, or `[indonesian]`")  
+                    raise ValueError(
+                        f"Unknown decoder_lang_token `{decoder_lang_token}`, decoder_lang_token must be either `[javanese]`, `[sundanese]`, or `[indonesian]`"
+                    )
                 elif type(decoder_inputs) == list:
                     if len(decoder_inputs) == 0:
                         raise ValueError(IndoNLGTokenizer.input_error_message)
@@ -209,35 +294,72 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
 
                 decoder_lang_id = self.special_tokens_to_ids[decoder_lang_token]
                 decoder_input_batch = self(decoder_inputs, return_attention_mask=False)
-                
+
                 if type(decoder_inputs) == str:
-                    labels = [self.bos_token_id] + decoder_input_batch['input_ids'] + [self.eos_token_id, decoder_lang_id]
-                    decoder_input_batch['input_ids'] = [decoder_lang_id, self.bos_token_id] + decoder_input_batch['input_ids'] + [self.eos_token_id]
+                    labels = (
+                        [self.bos_token_id]
+                        + decoder_input_batch["input_ids"]
+                        + [self.eos_token_id, decoder_lang_id]
+                    )
+                    decoder_input_batch["input_ids"] = (
+                        [decoder_lang_id, self.bos_token_id]
+                        + decoder_input_batch["input_ids"]
+                        + [self.eos_token_id]
+                    )
                 else:
-                    labels = list(map(lambda input_ids: [self.bos_token_id] + input_ids + [self.eos_token_id, decoder_lang_id], decoder_input_batch['input_ids']))
-                    decoder_input_batch['input_ids'] = list(map(lambda input_ids: [decoder_lang_id, self.bos_token_id] + input_ids + [self.eos_token_id], decoder_input_batch['input_ids']))
-                    
+                    labels = list(
+                        map(
+                            lambda input_ids: (
+                                [self.bos_token_id]
+                                + input_ids
+                                + [self.eos_token_id, decoder_lang_id]
+                            ),
+                            decoder_input_batch["input_ids"],
+                        )
+                    )
+                    decoder_input_batch["input_ids"] = list(
+                        map(
+                            lambda input_ids: (
+                                [decoder_lang_id, self.bos_token_id]
+                                + input_ids
+                                + [self.eos_token_id]
+                            ),
+                            decoder_input_batch["input_ids"],
+                        )
+                    )
+
                 # Padding
                 input_batch = self.pad(input_batch, return_tensors=return_tensors)
-                decoder_input_batch = self.pad(decoder_input_batch, return_tensors=return_tensors)
-                labels = self.pad({'input_ids': labels}, return_tensors=return_tensors)['input_ids']
+                decoder_input_batch = self.pad(
+                    decoder_input_batch, return_tensors=return_tensors
+                )
+                labels = self.pad({"input_ids": labels}, return_tensors=return_tensors)[
+                    "input_ids"
+                ]
                 if not isinstance(labels, (list, tuple)):
                     labels[labels == self.pad_token_id] = -100
                 else:
-                    labels = list(map(lambda x: -100 if x == self.pad_token_id else x, labels))
-                
+                    labels = list(
+                        map(lambda x: -100 if x == self.pad_token_id else x, labels)
+                    )
+
                 # Store into a single dict
-                input_batch['decoder_input_ids'] = decoder_input_batch['input_ids']
-                input_batch['decoder_attention_mask'] = decoder_input_batch['attention_mask']
-                input_batch['labels'] = labels
-                
+                input_batch["decoder_input_ids"] = decoder_input_batch["input_ids"]
+                input_batch["decoder_attention_mask"] = decoder_input_batch[
+                    "attention_mask"
+                ]
+                input_batch["labels"] = labels
+
                 return input_batch
 
     def __len__(self):
         return max(self.special_ids_to_tokens) + 1
-    
+
     def get_special_tokens_mask(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None, already_has_special_tokens: bool = False
+        self,
+        token_ids_0: List[int],
+        token_ids_1: Optional[List[int]] = None,
+        already_has_special_tokens: bool = False,
     ) -> List[int]:
         """
         Retrieve sequence ids from a token list that has no special tokens added. This method is called when adding
@@ -256,7 +378,9 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         """
         if already_has_special_tokens:
             return super().get_special_tokens_mask(
-                token_ids_0=token_ids_0, token_ids_1=token_ids_1, already_has_special_tokens=True
+                token_ids_0=token_ids_0,
+                token_ids_1=token_ids_1,
+                already_has_special_tokens=True,
             )
 
         if token_ids_1 is None:
@@ -274,7 +398,7 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
 
     def _tokenize(self, text: str) -> List[str]:
         return self.sp_model.encode(text.lower(), out_type=str)
-    
+
     def convert_ids_to_tokens(
         self, ids: Union[int, List[int]], skip_special_tokens: bool = False
     ) -> Union[str, List[str]]:
@@ -290,42 +414,56 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
             `str` or `List[str]`: The decoded token(s).
         """
         if isinstance(ids, int):
-            if ids not in self.added_tokens_decoder or ids in self.special_tokens_to_ids:
-                return self._convert_id_to_token(ids, skip_special_tokens=skip_special_tokens)
+            if (
+                ids not in self.added_tokens_decoder
+                or ids in self.special_tokens_to_ids
+            ):
+                return self._convert_id_to_token(
+                    ids, skip_special_tokens=skip_special_tokens
+                )
             else:
-                return self.added_tokens_decoder[ids]
+                return str(self.added_tokens_decoder[ids])
         tokens = []
         for index in ids:
             index = int(index)
-            if skip_special_tokens and index in (self.all_special_ids + list(self.special_tokens_to_ids.values())):
+            if skip_special_tokens and index in (
+                self.all_special_ids + list(self.special_tokens_to_ids.values())
+            ):
                 continue
-            if index not in self.added_tokens_decoder or index in self.special_tokens_to_ids:
-                tokens.append(self._convert_id_to_token(index, skip_special_tokens=skip_special_tokens))                
+            if (
+                index not in self.added_tokens_decoder
+                or index in self.special_tokens_to_ids
+            ):
+                tokens.append(
+                    self._convert_id_to_token(
+                        index, skip_special_tokens=skip_special_tokens
+                    )
+                )
             else:
-                tokens.append(self.added_tokens_decoder[index])
+                tokens.append(str(self.added_tokens_decoder[index]))
         return tokens
-    
+
     def _convert_token_to_id(self, token):
-        """ Converts a token (str) in an id using the vocab. """
+        """Converts a token (str) in an id using the vocab."""
         if token in self.special_tokens_to_ids:
             return self.special_tokens_to_ids[token]
         return self.sp_model.PieceToId(token)
-    
+
     def _convert_id_to_token(self, index, skip_special_tokens=False):
         """Converts an index (integer) in a token (str) using the vocab."""
         if skip_special_tokens and index in self.special_token_ids:
-            return ''
-            
+            return ""
+
         if index in self.special_ids_to_tokens:
             return self.special_ids_to_tokens[index]
-        
+
         token = self.sp_model.IdToPiece(index)
-        if '<0x' in token:
+        if "<0x" in token:
             char_rep = chr(int(token[1:-1], 0))
             if char_rep.isprintable():
                 return char_rep
         return token
-    
+
     def __getstate__(self):
         state = self.__dict__.copy()
         state["sp_model"] = None
@@ -341,16 +479,19 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         self.sp_model = spm.SentencePieceProcessor(**self.sp_model_kwargs)
         self.sp_model.Load(self.vocab_file)
 
-    def decode(self, inputs, skip_special_tokens=False):     
-        outputs = super().decode(inputs, skip_special_tokens=skip_special_tokens)
-        return outputs.replace(' ','').replace('▁', ' ')
-    
+    def decode(self, token_ids, skip_special_tokens=False, **kwargs):
+        outputs = super().decode(
+            token_ids, skip_special_tokens=skip_special_tokens, **kwargs
+        )
+        return outputs.replace(" ", "").replace(SPIECE_UNDERLINE, " ")
+
     def _pad_decoder(
         self,
         encoded_inputs: Union[Dict[str, EncodedInput], BatchEncoding],
         max_length: Optional[int] = None,
         padding_strategy: PaddingStrategy = PaddingStrategy.DO_NOT_PAD,
         pad_to_multiple_of: Optional[int] = None,
+        padding_side: Optional[str] = None,
         return_attention_mask: Optional[bool] = None,
     ) -> dict:
         """
@@ -377,12 +518,21 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         if return_attention_mask is None:
             return_attention_mask = "decoder_attention_mask" in self.model_input_names
 
+        padding_side = padding_side or self.padding_side
+
         required_input = encoded_inputs[self.model_input_names[2]]
 
-        if max_length is not None and pad_to_multiple_of is not None and (max_length % pad_to_multiple_of != 0):
+        if (
+            max_length is not None
+            and pad_to_multiple_of is not None
+            and (max_length % pad_to_multiple_of != 0)
+        ):
             max_length = ((max_length // pad_to_multiple_of) + 1) * pad_to_multiple_of
 
-        needs_to_be_padded = padding_strategy != PaddingStrategy.DO_NOT_PAD and len(required_input) != max_length
+        needs_to_be_padded = (
+            padding_strategy != PaddingStrategy.DO_NOT_PAD
+            and len(required_input) != max_length
+        )
 
         # Initialize attention mask if not present.
         if return_attention_mask and "decoder_attention_mask" not in encoded_inputs:
@@ -391,38 +541,56 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         if needs_to_be_padded:
             difference = max_length - len(required_input)
 
-            if self.padding_side == "right":
+            if padding_side == "right":
                 if return_attention_mask:
-                    encoded_inputs["decoder_attention_mask"] = encoded_inputs["decoder_attention_mask"] + [0] * difference
+                    encoded_inputs["decoder_attention_mask"] = (
+                        encoded_inputs["decoder_attention_mask"] + [0] * difference
+                    )
                 if "decoder_token_type_ids" in encoded_inputs:
                     encoded_inputs["decoder_token_type_ids"] = (
-                        encoded_inputs["decoder_token_type_ids"] + [self.pad_token_type_id] * difference
+                        encoded_inputs["decoder_token_type_ids"]
+                        + [self.pad_token_type_id] * difference
                     )
                 if "decoder_special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["decoder_special_tokens_mask"] = encoded_inputs["decoder_special_tokens_mask"] + [1] * difference
-                encoded_inputs[self.model_input_names[2]] = required_input + [self.pad_token_id] * difference
-                
-                label_input = encoded_inputs[self.model_input_names[4]]
-                encoded_inputs[self.model_input_names[4]] = label_input + [-100] * difference
-            elif self.padding_side == "left":
-                if return_attention_mask:
-                    encoded_inputs["decoder_attention_mask"] = [0] * difference + encoded_inputs["decoder_attention_mask"]
-                if "decoder_token_type_ids" in encoded_inputs:
-                    encoded_inputs["decoder_token_type_ids"] = [self.pad_token_type_id] * difference + encoded_inputs[
-                        "decoder_token_type_ids"
-                    ]
-                if "decoder_special_tokens_mask" in encoded_inputs:
-                    encoded_inputs["decoder_special_tokens_mask"] = [1] * difference + encoded_inputs["decoder_special_tokens_mask"]
-                encoded_inputs[self.model_input_names[2]] = [self.pad_token_id] * difference + required_input
-                
-                label_input = encoded_inputs[self.model_input_names[4]]
-                encoded_inputs[self.model_input_names[4]] = label_input + [-100] * difference
-            else:
-                raise ValueError("Invalid padding strategy:" + str(self.padding_side))
+                    encoded_inputs["decoder_special_tokens_mask"] = (
+                        encoded_inputs["decoder_special_tokens_mask"] + [1] * difference
+                    )
+                encoded_inputs[self.model_input_names[2]] = (
+                    required_input + [self.pad_token_id] * difference
+                )
 
-        return encoded_inputs    
-        
-    def pad(self,
+                label_input = encoded_inputs[self.model_input_names[4]]
+                encoded_inputs[self.model_input_names[4]] = (
+                    label_input + [-100] * difference
+                )
+            elif padding_side == "left":
+                if return_attention_mask:
+                    encoded_inputs["decoder_attention_mask"] = [
+                        0
+                    ] * difference + encoded_inputs["decoder_attention_mask"]
+                if "decoder_token_type_ids" in encoded_inputs:
+                    encoded_inputs["decoder_token_type_ids"] = [
+                        self.pad_token_type_id
+                    ] * difference + encoded_inputs["decoder_token_type_ids"]
+                if "decoder_special_tokens_mask" in encoded_inputs:
+                    encoded_inputs["decoder_special_tokens_mask"] = [
+                        1
+                    ] * difference + encoded_inputs["decoder_special_tokens_mask"]
+                encoded_inputs[self.model_input_names[2]] = [
+                    self.pad_token_id
+                ] * difference + required_input
+
+                label_input = encoded_inputs[self.model_input_names[4]]
+                encoded_inputs[self.model_input_names[4]] = (
+                    label_input + [-100] * difference
+                )
+            else:
+                raise ValueError("Invalid padding strategy:" + str(padding_side))
+
+        return encoded_inputs
+
+    def pad(
+        self,
         encoded_inputs: Union[
             BatchEncoding,
             List[BatchEncoding],
@@ -433,6 +601,7 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         padding: Union[bool, str, PaddingStrategy] = True,
         max_length: Optional[int] = None,
         pad_to_multiple_of: Optional[int] = None,
+        padding_side: Optional[str] = None,
         return_attention_mask: Optional[bool] = None,
         return_tensors: Optional[Union[str, TensorType]] = None,
         verbose: bool = True,
@@ -494,8 +663,13 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         """
         # If we have a list of dicts, let's convert it in a dict of lists
         # We do this to allow using this method as a collate_fn function in PyTorch Dataloader
-        if isinstance(encoded_inputs, (list, tuple)) and isinstance(encoded_inputs[0], Mapping):
-            encoded_inputs = {key: [example[key] for example in encoded_inputs] for key in encoded_inputs[0].keys()}
+        if isinstance(encoded_inputs, (list, tuple)) and isinstance(
+            encoded_inputs[0], Mapping
+        ):
+            encoded_inputs = {
+                key: [example[key] for example in encoded_inputs]
+                for key in encoded_inputs[0].keys()
+            }
 
         # The model's main input name, usually `input_ids`, has be passed for padding
         if self.model_input_names[0] not in encoded_inputs:
@@ -524,11 +698,11 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
                     break
         # At this state, if `first_element` is still a list/tuple, it's an empty one so there is nothing to do.
         if not isinstance(first_element, (int, list, tuple)):
-            if is_tf_available() and _is_tensorflow(first_element):
+            if _is_tensorflow_tensor(first_element):
                 return_tensors = "tf" if return_tensors is None else return_tensors
-            elif is_torch_available() and _is_torch(first_element):
+            elif _is_torch_tensor(first_element):
                 return_tensors = "pt" if return_tensors is None else return_tensors
-            elif isinstance(first_element, np.ndarray):
+            elif _is_numpy_array(first_element):
                 return_tensors = "np" if return_tensors is None else return_tensors
             else:
                 raise ValueError(
@@ -551,14 +725,15 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
                 max_length=max_length,
                 padding_strategy=padding_strategy,
                 pad_to_multiple_of=pad_to_multiple_of,
+                padding_side=padding_side,
                 return_attention_mask=return_attention_mask,
             )
             return BatchEncoding(encoded_inputs, tensor_type=return_tensors)
 
         batch_size = len(required_input)
-        assert all(
-            len(v) == batch_size for v in encoded_inputs.values()
-        ), "Some items in the output dictionary have a different batch size than others."
+        assert all(len(v) == batch_size for v in encoded_inputs.values()), (
+            "Some items in the output dictionary have a different batch size than others."
+        )
 
         if padding_strategy == PaddingStrategy.LONGEST:
             max_length = max(len(inputs) for inputs in required_input)
@@ -572,17 +747,21 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
                 max_length=max_length,
                 padding_strategy=padding_strategy,
                 pad_to_multiple_of=pad_to_multiple_of,
+                padding_side=padding_side,
                 return_attention_mask=return_attention_mask,
             )
-            
+
             # Handle decoder_input_ids
             if self.model_input_names[2] in outputs:
-                max_decoder_length = max(len(inputs) for inputs in encoded_inputs[self.model_input_names[2]])                    
+                max_decoder_length = max(
+                    len(inputs) for inputs in encoded_inputs[self.model_input_names[2]]
+                )
                 outputs = self._pad_decoder(
                     outputs,
                     max_length=max_decoder_length,
                     padding_strategy=padding_strategy,
                     pad_to_multiple_of=pad_to_multiple_of,
+                    padding_side=padding_side,
                     return_attention_mask=return_attention_mask,
                 )
 
