@@ -483,7 +483,14 @@ class IndoNLGTokenizer(PreTrainedTokenizer):
         outputs = super().decode(
             token_ids, skip_special_tokens=skip_special_tokens, **kwargs
         )
-        return outputs.replace(" ", "").replace(SPIECE_UNDERLINE, " ")
+
+        def clean_output(output):
+            return output.replace(" ", "").replace(SPIECE_UNDERLINE, " ")
+
+        if isinstance(outputs, list):
+            return [clean_output(output) for output in outputs]
+
+        return clean_output(outputs)
 
     def _pad_decoder(
         self,
